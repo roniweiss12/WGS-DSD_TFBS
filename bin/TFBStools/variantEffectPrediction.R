@@ -12,12 +12,14 @@ library(seqinr)
 library(dplyr)
 library(arrow)
 library(GenomicFeatures)
+library(xlsx)
 
 ## CONSTANTS
 SEQNAMES_FILEDS <- c("V1", "seqname", "chromosome", "chrom", "chr", "chromosome_name", "seqid", "CHROM")
 START_FIELD <- c("V2", "POS", "start")
 END_FIELD <- c("V3", "stop", "end")
 HUMAN_CELLS <- c("PG", "PS", "SE", "GR")
+MOUSE_CELLS <- c("X", "Y")
 THRESHOLD <- 0
 
 filter_seqs <- function(intervals_set, seqs) {
@@ -150,6 +152,7 @@ filter_by_threshold <- function(thresholds, df){
   combined_df <- subset(combined_df, relative_score.x >= threshold | relative_score.y >= threshold)
   cols_to_remove <- c("TF", "X")
   combined_df <- combined_df[, -which(names(combined_df) %in% cols_to_remove)]
+  # combined_df <- df
   rows_to_remove <- lapply(unique(combined_df$TF_ID), function(id) {
     ss <- subset(combined_df, TF_ID == id)
     double_rows <- lapply(seq_len(nrow(ss)), function(row_idx) {
@@ -252,8 +255,8 @@ tfbs_delta <- function(row, cols){
   return(max_deltas)
 }
 # function to check if any values in a string are contained in the list
-contains_human_cells <- function(cell_string) {
-  any(sapply(HUMAN_CELLS, grepl, cell_string))
+contains_human_mouse_cells <- function(cell_string, cells_str) {
+  any(sapply(cells_str, grepl, cell_string))
 }
 blend_rows <- function(df, gap){
   x_rows <- df[is.na(df$relative_score.y), ]
@@ -271,7 +274,18 @@ blend_rows <- function(df, gap){
   }
   return(df)
 }
+reorder_by_interval_source <- function(df){
+  df$contains_human_cells <- sapply(df$INTERVAL_ID, contains_human_mouse_cells, cells_str = HUMAN_CELLS)
+  df$contains_mouse_cells <- sapply(df$INTERVAL_ID, contains_human_mouse_cells, cells_str = MOUSE_CELLS)
+  df <- df[order(df$contains_human_cells, decreasing = TRUE), ]
+  df <- df[order((df$contains_human_cells & df$contains_mouse_cells), decreasing = TRUE), ]
+  return(df)
+}
 main_pipeline <- function(row){
+  print(row[["POS"]])
+  if (row[["POS"]] < row[["from"]] | row[["POS"]] > row[["to"]]){
+    return(row)
+  }
   #get variant data
   data <- get_var_data(row, seqs)
   #scan matrices for wt and mt
@@ -340,7 +354,8 @@ variants_file <- args[2]
 fasta_file <- args[3]
 threshold_file <- args[4]
 output_file <- strsplit(variants_file, "\\.")[[1]][1]
-output_file <- paste0(output_file, "_effect_prediction.tsv")
+output_tsv <- paste0(output_file, "_effect_prediction.tsv")
+output_xlsx <- paste0(output_file, "_effect_prediction.xlsx")
 
 matrices <- readJASPARMatrix(tf_jaspar_file, matrixClass="PWM")
 seqs <- read.fasta(fasta_file)
@@ -360,21 +375,19 @@ for (id in thresholds$matrixID){
   vars[[paste0(tf, "_", id, "_mutated")]] <- ""
   vars[[paste0(tf, "_", id, "_delta")]] <- ""
 }
-
 # Apply the main_pipeline function to each row of the dataframe
 modified_rows <- apply(vars, 1, main_pipeline)
 # Assign the modified rows back to the original dataframe
 vars <- as.data.frame(t(modified_rows))
-                       
+
 delta_cols <- get_delta_cols(names(vars))
 # find each row's maximal delta
 vars$TFBS_delta <- apply(vars, 1, tfbs_delta, cols = delta_cols)
 #order by highest delta
 vars <- vars[order(vars$TFBS_delta, decreasing = TRUE), ]
 #order by interval source
-vars$contains_human_cells <- sapply(vars$INTERVAL_ID, contains_human_cells)
-vars <- vars[order(vars$contains_human_cells, decreasing = TRUE), ]
-# Remove the temporary column
-vars$contains_human_cells <- NULL
-#output_file
-write.table(vars, "tmp.tsv", sep = '\t', row.names = FALSE, quote = FALSE, na = "")
+vars <- reorder_by_interval_source(vars)
+# Write the modified dataframe to a file
+write.table(vars, output_tsv, sep = '\t', row.names = FALSE, quote = FALSE, na = "")
+#create xlsx file
+write.xlsx(vars, output_xlsx, row.names = FALSE, col.names = TRUE, append = FALSE)

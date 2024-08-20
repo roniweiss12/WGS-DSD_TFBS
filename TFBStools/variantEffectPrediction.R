@@ -1,3 +1,5 @@
+# This script takes the variants.csv file from DSDncVariants analysis and for each TF 
+# it adds columns that give a score to the binding site around that variant in WT and with the mutation + the delta between them.
 # Load command-line arguments
 args <- commandArgs(trailingOnly = TRUE)
 

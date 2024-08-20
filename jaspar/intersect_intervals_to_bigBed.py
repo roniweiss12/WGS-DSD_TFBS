@@ -1,3 +1,5 @@
+# This script extracts entries from a bigBed file according to genomic intervals provided in a bed file
+
 import pyBigWig
 import pandas as pd
 import sys

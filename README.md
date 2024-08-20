@@ -10,3 +10,4 @@ Do you already have a TFBS file and want to extract the results within specific 
 
 Are you looking for a script that changes a fasta file according to given variants? use `mutate_fasta.R`
 
+The rest of the scripts have explanations within the code.

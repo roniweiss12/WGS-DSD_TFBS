@@ -1,3 +1,4 @@
+# This script parses the data extracted from JASPAR2024.bb
 import pandas as pd
 import ast
 from pandarallel import pandarallel
